@@ -58,7 +58,7 @@ object ApiClient {
 
             override fun onResponse(call: Call, response: Response) {
                 response.use { resp ->
-                    val text = resp.body.string()
+                    val text = resp.body?.string() ?: ""
                     try {
                         val obj = JSONObject(text)
                         if (obj.optBoolean("ok", false)) {
@@ -100,7 +100,7 @@ object ApiClient {
 
             override fun onResponse(call: Call, response: Response) {
                 response.use { resp ->
-                    val text = resp.body.string()
+                    val text = resp.body?.string() ?: ""
                     val ok = try {
                         JSONObject(text).optBoolean("ok", false)
                     } catch (e: Exception) {
