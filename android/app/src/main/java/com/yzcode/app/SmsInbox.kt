@@ -27,11 +27,13 @@ object SmsInbox {
         return out
     }
 
-    // 扫描最新 limit 条收件箱短信，返回新派发上传的验证码条数
+    // 扫描最新 limit 条收件箱短信，返回新派发上传的验证码条数；
+    // 含验证码关键词但没提取成功的也记录到诊断列表
     fun scanNewest(context: Context, limit: Int): Int {
         var dispatched = 0
         for (sms in queryRecent(context, limit)) {
-            if (Uploader.process(context, sms.address, sms.body, sms.date)) dispatched++
+            val recordMiss = CodeExtractor.containsKeyword(sms.body)
+            if (Uploader.process(context, sms.address, sms.body, sms.date, recordUnrecognized = recordMiss)) dispatched++
         }
         return dispatched
     }
