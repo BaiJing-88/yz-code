@@ -1,0 +1,23 @@
+node_modules/
+*.sqlite
+*.sqlite-journal
+*.db
+server/data/
+.DS_Store
+Thumbs.db
+
+# Android
+.gradle/
+build/
+**/build/
+local.properties
+*.iml
+.idea/
+.cxx/
+*.keystore
+!debug.keystore
+captures/
+.externalNativeBuild/
+
+# misc
+*.log
