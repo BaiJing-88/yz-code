@@ -26,7 +26,7 @@ object ApiClient {
     }
 
     fun interface SimpleCallback {
-        fun onResult(ok: Boolean)
+        fun onResult(ok: Boolean, error: String?)
     }
 
     private fun baseUrl(serverUrl: String): String {
@@ -95,18 +95,26 @@ object ApiClient {
             .build()
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                callback.onResult(false)
+                callback.onResult(false, "网络错误：" + (e.message ?: "连接失败"))
             }
 
             override fun onResponse(call: Call, response: Response) {
                 response.use { resp ->
                     val text = resp.body?.string() ?: ""
+                    var err: String? = "HTTP " + resp.code
                     val ok = try {
-                        JSONObject(text).optBoolean("ok", false)
+                        val obj = JSONObject(text)
+                        if (obj.optBoolean("ok", false)) {
+                            err = null
+                            true
+                        } else {
+                            err = obj.optString("error", err)
+                            false
+                        }
                     } catch (e: Exception) {
                         false
                     }
-                    callback.onResult(resp.isSuccessful && ok)
+                    callback.onResult(resp.isSuccessful && ok, err)
                 }
             }
         })
@@ -120,12 +128,12 @@ object ApiClient {
             .build()
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                callback.onResult(false)
+                callback.onResult(false, e.message)
             }
 
             override fun onResponse(call: Call, response: Response) {
                 response.close()
-                callback.onResult(true)
+                callback.onResult(true, null)
             }
         })
     }

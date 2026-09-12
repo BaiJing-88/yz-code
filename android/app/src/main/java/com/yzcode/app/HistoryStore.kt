@@ -9,7 +9,7 @@ object HistoryStore {
     private const val KEY_ITEMS = "items"
     private const val MAX_ITEMS = 50
 
-    data class Entry(val code: String, val sender: String, val time: Long)
+    data class Entry(val code: String, val sender: String, val time: Long, val status: String = "上传成功")
 
     @Synchronized
     fun add(context: Context, entry: Entry) {
@@ -20,6 +20,7 @@ object HistoryStore {
         obj.put("code", entry.code)
         obj.put("sender", entry.sender)
         obj.put("time", entry.time)
+        obj.put("status", entry.status)
         next.put(obj)
         for (i in 0 until old.length()) {
             if (next.length() >= MAX_ITEMS) break
@@ -35,7 +36,7 @@ object HistoryStore {
         val out = ArrayList<Entry>(arr.length())
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
-            out.add(Entry(o.optString("code", ""), o.optString("sender", ""), o.optLong("time", 0L)))
+            out.add(Entry(o.optString("code", ""), o.optString("sender", ""), o.optLong("time", 0L), o.optString("status", "上传成功")))
         }
         return out
     }

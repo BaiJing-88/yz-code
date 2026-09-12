@@ -83,7 +83,7 @@ class MainActivity : Activity() {
         root.addView(permButton, permLp)
 
         val listTitle = TextView(this).apply {
-            text = "最近上传的验证码"
+            text = "最近记录（含状态诊断）"
             textSize = 16f
             setTextColor(Ui.FG)
             setPadding(0, Ui.dp(this@MainActivity, 20), 0, Ui.dp(this@MainActivity, 8))
@@ -144,9 +144,9 @@ class MainActivity : Activity() {
             val row = TextView(this).apply {
                 val time = if (e.time > 0) fmt.format(Date(e.time)) else "-"
                 val from = if (e.sender.isEmpty()) "-" else e.sender
-                text = e.code + "    " + time + "\n来自：" + from
+                text = e.code + "    " + time + "\n来自：" + from + "    " + e.status
                 textSize = 15f
-                setTextColor(Ui.FG)
+                setTextColor(if (e.status == "上传成功") Ui.FG else Ui.ERROR)
                 setPadding(0, Ui.dp(this@MainActivity, 8), 0, Ui.dp(this@MainActivity, 8))
             }
             listContainer.addView(row)
@@ -160,7 +160,7 @@ class MainActivity : Activity() {
         val token = Prefs.token(this)
         val server = Prefs.serverUrl(this)
         if (token != null) {
-            ApiClient.logout(server, token) { }
+            ApiClient.logout(server, token) { _, _ -> }
         }
         Prefs.clearLogin(this)
         Toast.makeText(this, "已退出登录", Toast.LENGTH_SHORT).show()

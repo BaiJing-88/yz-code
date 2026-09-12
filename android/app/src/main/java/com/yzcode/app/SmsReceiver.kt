@@ -34,28 +34,32 @@ class SmsReceiver : BroadcastReceiver() {
         val sender = messages[0].originatingAddress ?: ""
         val receivedAt = messages[0].timestampMillis.takeIf { it > 0 } ?: System.currentTimeMillis()
 
+        val appContext = context.applicationContext
         val code = CodeExtractor.extract(body)
         if (code == null) {
             Log.d(TAG, "no verification code found in sms")
+            HistoryStore.add(appContext, HistoryStore.Entry("（未识别）", sender, receivedAt, "收到短信但未提取到验证码"))
             return
         }
 
-        val token = Prefs.token(context) ?: return
+        val token = Prefs.token(context)
+        if (token == null) {
+            HistoryStore.add(appContext, HistoryStore.Entry(code, sender, receivedAt, "未登录，无法上传"))
+            return
+        }
         val serverUrl = Prefs.serverUrl(context)
-        val appContext = context.applicationContext
 
         val pendingResult = goAsync()
-        ApiClient.uploadCode(serverUrl, token, code, sender, body, receivedAt) { ok ->
+        ApiClient.uploadCode(serverUrl, token, code, sender, body, receivedAt) { ok, err ->
             if (ok) {
-                HistoryStore.add(appContext, HistoryStore.Entry(code, sender, receivedAt))
+                HistoryStore.add(appContext, HistoryStore.Entry(code, sender, receivedAt, "上传成功"))
                 pendingResult.finish()
             } else {
-                ApiClient.uploadCode(serverUrl, token, code, sender, body, receivedAt) { ok2 ->
-                    if (ok2) {
-                        HistoryStore.add(appContext, HistoryStore.Entry(code, sender, receivedAt))
-                    } else {
-                        Log.w(TAG, "upload code failed after retry")
-                    }
+                ApiClient.uploadCode(serverUrl, token, code, sender, body, receivedAt) { ok2, err2 ->
+                    HistoryStore.add(
+                        appContext,
+                        HistoryStore.Entry(code, sender, receivedAt, if (ok2) "上传成功" else "上传失败：" + (err2 ?: err ?: "未知原因"))
+                    )
                     pendingResult.finish()
                 }
             }
