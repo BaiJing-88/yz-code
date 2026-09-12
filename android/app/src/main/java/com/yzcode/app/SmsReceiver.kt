@@ -34,35 +34,9 @@ class SmsReceiver : BroadcastReceiver() {
         val sender = messages[0].originatingAddress ?: ""
         val receivedAt = messages[0].timestampMillis.takeIf { it > 0 } ?: System.currentTimeMillis()
 
-        val appContext = context.applicationContext
-        val code = CodeExtractor.extract(body)
-        if (code == null) {
-            Log.d(TAG, "no verification code found in sms")
-            HistoryStore.add(appContext, HistoryStore.Entry("（未识别）", sender, receivedAt, "收到短信但未提取到验证码"))
-            return
-        }
-
-        val token = Prefs.token(context)
-        if (token == null) {
-            HistoryStore.add(appContext, HistoryStore.Entry(code, sender, receivedAt, "未登录，无法上传"))
-            return
-        }
-        val serverUrl = Prefs.serverUrl(context)
-
         val pendingResult = goAsync()
-        ApiClient.uploadCode(serverUrl, token, code, sender, body, receivedAt) { ok, err ->
-            if (ok) {
-                HistoryStore.add(appContext, HistoryStore.Entry(code, sender, receivedAt, "上传成功"))
-                pendingResult.finish()
-            } else {
-                ApiClient.uploadCode(serverUrl, token, code, sender, body, receivedAt) { ok2, err2 ->
-                    HistoryStore.add(
-                        appContext,
-                        HistoryStore.Entry(code, sender, receivedAt, if (ok2) "上传成功" else "上传失败：" + (err2 ?: err ?: "未知原因"))
-                    )
-                    pendingResult.finish()
-                }
-            }
+        Uploader.process(context, sender, body, receivedAt, recordUnrecognized = true) {
+            pendingResult.finish()
         }
     }
 

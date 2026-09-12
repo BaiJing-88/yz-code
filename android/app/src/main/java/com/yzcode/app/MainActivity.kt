@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -22,21 +23,31 @@ class MainActivity : Activity() {
     private lateinit var permText: TextView
     private lateinit var listContainer: LinearLayout
 
-    private val requiredPermissions = arrayOf(
+    private val smsPermissions = arrayOf(
         Manifest.permission.RECEIVE_SMS,
         Manifest.permission.READ_SMS
     )
 
+    private fun allPermissions(): Array<String> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+            smsPermissions + Manifest.permission.POST_NOTIFICATIONS
+        else
+            smsPermissions
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         buildUi()
-        if (!hasSmsPermissions()) {
-            requestPermissions(requiredPermissions, REQ_PERMS)
+        val missing = allPermissions().any { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        if (missing) {
+            requestPermissions(allPermissions(), REQ_PERMS)
         }
     }
 
     override fun onResume() {
         super.onResume()
+        if (Prefs.token(this) != null && hasSmsPermissions()) {
+            SmsMonitorService.start(this)
+        }
         refresh()
     }
 
@@ -46,7 +57,7 @@ class MainActivity : Activity() {
     }
 
     private fun hasSmsPermissions(): Boolean =
-        requiredPermissions.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+        smsPermissions.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 
     private fun buildUi() {
         val scroll = ScrollView(this)
@@ -71,8 +82,9 @@ class MainActivity : Activity() {
         val permButton = Button(this).apply {
             text = "申请短信权限"
             setOnClickListener {
-                if (!hasSmsPermissions()) {
-                    requestPermissions(requiredPermissions, REQ_PERMS)
+                val missing = allPermissions().any { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+                if (missing) {
+                    requestPermissions(allPermissions(), REQ_PERMS)
                 } else {
                     Toast.makeText(this@MainActivity, "权限已授予", Toast.LENGTH_SHORT).show()
                 }
@@ -81,6 +93,23 @@ class MainActivity : Activity() {
         val permLp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         permLp.topMargin = Ui.dp(this, 12)
         root.addView(permButton, permLp)
+
+        val scanButton = Button(this).apply {
+            text = "立即扫描最近短信"
+            setOnClickListener {
+                Toast.makeText(this@MainActivity, "扫描中…", Toast.LENGTH_SHORT).show()
+                Thread {
+                    val n = SmsInbox.scanNewest(applicationContext, 15)
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, "扫描完成，新识别并上传 $n 条验证码", Toast.LENGTH_LONG).show()
+                        refresh()
+                    }
+                }.start()
+            }
+        }
+        val scanLp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        scanLp.topMargin = Ui.dp(this, 8)
+        root.addView(scanButton, scanLp)
 
         val listTitle = TextView(this).apply {
             text = "最近记录（含状态诊断）"
@@ -121,7 +150,7 @@ class MainActivity : Activity() {
         serverText.text = "服务器：" + Prefs.serverUrl(this)
         val granted = hasSmsPermissions()
         if (granted) {
-            permText.text = "监听状态：运行中（短信权限已授予）"
+            permText.text = "监听状态：运行中（前台服务 + 广播双通道）"
             permText.setTextColor(Ui.OK)
         } else {
             permText.text = "监听状态：未开启（缺少 RECEIVE_SMS / READ_SMS 权限）"
@@ -163,6 +192,7 @@ class MainActivity : Activity() {
             ApiClient.logout(server, token) { _, _ -> }
         }
         Prefs.clearLogin(this)
+        SmsMonitorService.stop(this)
         Toast.makeText(this, "已退出登录", Toast.LENGTH_SHORT).show()
         startActivity(Intent(this, LoginActivity::class.java))
         finish()
