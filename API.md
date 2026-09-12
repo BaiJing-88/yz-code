@@ -1,6 +1,6 @@
 # YZ-Code API 契约（服务端与 Android 端共同遵守）
 
-Base URL（线上）: `http://frp-act.com:17435`（frp 转发到本机 3000 端口，无 HTTPS）
+Base URL（线上）: `https://frp-act.com:17435`（SakuraFrp 隧道转发到本机 3000 端口，自动 HTTPS 自签证书，Android 端已内置证书钉扎）
 服务端监听: `0.0.0.0:3000`
 
 ## 认证

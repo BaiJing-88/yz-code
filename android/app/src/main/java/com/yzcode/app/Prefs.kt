@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 
 object Prefs {
-    const val DEFAULT_SERVER = "http://frp-act.com:17435"
+    const val DEFAULT_SERVER = "https://frp-act.com:17435"
 
     private const val PREFS_NAME = "yzcode_prefs"
     private const val KEY_TOKEN = "token"
