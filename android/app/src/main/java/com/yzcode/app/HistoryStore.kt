@@ -43,7 +43,10 @@ object HistoryStore {
 
     @Synchronized
     fun isUploaded(context: Context, code: String, time: Long): Boolean =
-        list(context).any { it.code == code && it.time == time && it.status == "上传成功" }
+        list(context).any {
+            it.code == code && it.status == "上传成功" &&
+                (it.time == time || kotlin.math.abs(it.time - time) < 180_000L)
+        }
 
     private fun readArray(raw: String?): JSONArray? = try {
         JSONArray(raw ?: "[]")

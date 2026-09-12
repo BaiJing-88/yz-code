@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
@@ -21,6 +22,7 @@ class MainActivity : Activity() {
     private lateinit var userText: TextView
     private lateinit var serverText: TextView
     private lateinit var permText: TextView
+    private lateinit var notifText: TextView
     private lateinit var listContainer: LinearLayout
 
     private val smsPermissions = arrayOf(
@@ -59,6 +61,11 @@ class MainActivity : Activity() {
     private fun hasSmsPermissions(): Boolean =
         smsPermissions.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 
+    private fun isNotifListenerEnabled(): Boolean {
+        val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: return false
+        return flat.contains(packageName)
+    }
+
     private fun buildUi() {
         val scroll = ScrollView(this)
         val root = LinearLayout(this).apply {
@@ -78,6 +85,7 @@ class MainActivity : Activity() {
         userText = addInfoLine(root)
         serverText = addInfoLine(root)
         permText = addInfoLine(root)
+        notifText = addInfoLine(root)
 
         val permButton = Button(this).apply {
             text = "申请短信权限"
@@ -110,6 +118,21 @@ class MainActivity : Activity() {
         val scanLp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         scanLp.topMargin = Ui.dp(this, 8)
         root.addView(scanButton, scanLp)
+
+        val notifButton = Button(this).apply {
+            text = "开启通知读取（验证码兜底）"
+            setOnClickListener {
+                if (isNotifListenerEnabled()) {
+                    Toast.makeText(this@MainActivity, "通知读取已开启", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this@MainActivity, "请在列表中找到 YZ-Code 并允许读取通知", Toast.LENGTH_LONG).show()
+                    startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+                }
+            }
+        }
+        val notifLp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        notifLp.topMargin = Ui.dp(this, 8)
+        root.addView(notifButton, notifLp)
 
         val listTitle = TextView(this).apply {
             text = "最近记录（含状态诊断）"
@@ -155,6 +178,13 @@ class MainActivity : Activity() {
         } else {
             permText.text = "监听状态：未开启（缺少 RECEIVE_SMS / READ_SMS 权限）"
             permText.setTextColor(Ui.ERROR)
+        }
+        if (isNotifListenerEnabled()) {
+            notifText.text = "通知读取：已开启（兜底通道就绪）"
+            notifText.setTextColor(Ui.OK)
+        } else {
+            notifText.text = "通知读取：未开启（验证码被 ROM 隔离时需要）"
+            notifText.setTextColor(Ui.ERROR)
         }
 
         listContainer.removeAllViews()
