@@ -2,18 +2,18 @@
 
 /**
  * YZ-Code 验证码查看器 · 服务端
- * 零 npm 依赖：node:http + node:sqlite + node:crypto
- * 监听 0.0.0.0:3000
+ * 零 npm 依赖：node:http + node:crypto + db.js（node:sqlite，缺失时回退 JSON 文件）
+ * 监听 0.0.0.0:7100
  */
 
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { DatabaseSync } = require('node:sqlite');
+const { createStore } = require('./db');
 
 const HOST = '0.0.0.0';
-const PORT = 3000;
+const PORT = 7100;
 const MAX_BODY_BYTES = 256 * 1024; // JSON body 上限 256KB
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = 20; // 登录/注册：每 IP 每分钟 20 次
@@ -23,57 +23,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 
 // ---------- 数据库 ----------
 fs.mkdirSync(DATA_DIR, { recursive: true });
-const db = new DatabaseSync(path.join(DATA_DIR, 'app.db'));
-db.exec(`
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-
-CREATE TABLE IF NOT EXISTS users (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  username      TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
-  created_at    INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS tokens (
-  token      TEXT PRIMARY KEY,
-  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_tokens_user ON tokens(user_id);
-
-CREATE TABLE IF NOT EXISTS codes (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  code        TEXT NOT NULL,
-  sender      TEXT,
-  message     TEXT,
-  received_at INTEGER NOT NULL,
-  created_at  INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_codes_user_time ON codes(user_id, received_at DESC, id DESC);
-`);
-
-const qUserByName = db.prepare('SELECT id, username, password_hash FROM users WHERE username = ?');
-const qInsertUser = db.prepare('INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)');
-const qInsertToken = db.prepare('INSERT INTO tokens (token, user_id, created_at) VALUES (?, ?, ?)');
-const qDeleteToken = db.prepare('DELETE FROM tokens WHERE token = ?');
-const qUserByToken = db.prepare(`
-  SELECT u.id, u.username
-  FROM tokens t JOIN users u ON u.id = t.user_id
-  WHERE t.token = ?
-`);
-const qInsertCode = db.prepare(
-  'INSERT INTO codes (user_id, code, sender, message, received_at, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-);
-const qListCodes = db.prepare(
-  'SELECT id, code, sender, message, received_at, created_at FROM codes WHERE user_id = ? ORDER BY received_at DESC, id DESC LIMIT ?'
-);
-const qLatestCode = db.prepare(
-  'SELECT id, code, sender, message, received_at, created_at FROM codes WHERE user_id = ? ORDER BY received_at DESC, id DESC LIMIT 1'
-);
-const qDeleteCode = db.prepare('DELETE FROM codes WHERE id = ? AND user_id = ?');
-const qClearCodes = db.prepare('DELETE FROM codes WHERE user_id = ?');
+const db = createStore(DATA_DIR);
 
 // ---------- 密码 / token ----------
 function hashPassword(password) {
@@ -198,7 +148,7 @@ function getBearerToken(req) {
 function getAuthUser(req) {
   const token = getBearerToken(req);
   if (!token) return null;
-  return qUserByToken.get(token) || null;
+  return db.findUserByToken(token);
 }
 
 // ---------- 输入校验 ----------
@@ -244,14 +194,14 @@ async function handleApi(req, res, url, pathname) {
       fail(res, 400, '密码至少 6 位');
       return;
     }
-    if (qUserByName.get(username)) {
+    if (db.findUserByName(username)) {
       fail(res, 409, '用户名已存在');
       return;
     }
     const now = Date.now();
-    const info = qInsertUser.run(username, hashPassword(password), now);
+    const info = db.insertUser(username, hashPassword(password), now);
     const token = newToken();
-    qInsertToken.run(token, Number(info.lastInsertRowid), now);
+    db.insertToken(token, info.id, now);
     sendJson(res, 200, { ok: true, token, username });
     return;
   }
@@ -265,20 +215,20 @@ async function handleApi(req, res, url, pathname) {
       fail(res, 400, '请提供用户名和密码');
       return;
     }
-    const user = qUserByName.get(username);
+    const user = db.findUserByName(username);
     if (!user || !verifyPassword(password, user.password_hash)) {
       fail(res, 401, '用户名或密码错误');
       return;
     }
     const token = newToken();
-    qInsertToken.run(token, user.id, Date.now());
+    db.insertToken(token, user.id, Date.now());
     sendJson(res, 200, { ok: true, token, username: user.username });
     return;
   }
 
   // ---- 以下接口均需认证 ----
   const token = getBearerToken(req);
-  const user = token ? qUserByToken.get(token) : null;
+  const user = token ? db.findUserByToken(token) : null;
   if (!user) {
     fail(res, 401, '未登录或登录已过期，请重新登录');
     return;
@@ -286,7 +236,7 @@ async function handleApi(req, res, url, pathname) {
 
   // ---- POST /api/logout ----
   if (method === 'POST' && pathname === '/api/logout') {
-    qDeleteToken.run(token);
+    db.deleteToken(token);
     sendJson(res, 200, { ok: true });
     return;
   }
@@ -320,8 +270,8 @@ async function handleApi(req, res, url, pathname) {
       }
       receivedAt = Math.round(t);
     }
-    const info = qInsertCode.run(user.id, code, sender, message, receivedAt, Date.now());
-    sendJson(res, 200, { ok: true, id: Number(info.lastInsertRowid) });
+    const info = db.insertCode(user.id, code, sender, message, receivedAt, Date.now());
+    sendJson(res, 200, { ok: true, id: info.id });
     return;
   }
 
@@ -337,14 +287,14 @@ async function handleApi(req, res, url, pathname) {
       }
       limit = Math.min(Math.floor(n), 500);
     }
-    const codes = qListCodes.all(user.id, limit);
+    const codes = db.listCodes(user.id, limit);
     sendJson(res, 200, { ok: true, codes });
     return;
   }
 
   // ---- GET /api/codes/latest ----
   if (method === 'GET' && pathname === '/api/codes/latest') {
-    const row = qLatestCode.get(user.id);
+    const row = db.latestCode(user.id);
     sendJson(res, 200, { ok: true, code: row || null });
     return;
   }
@@ -357,7 +307,7 @@ async function handleApi(req, res, url, pathname) {
       fail(res, 400, '无效的验证码 ID');
       return;
     }
-    const info = qDeleteCode.run(Number(idStr), user.id);
+    const info = db.deleteCode(Number(idStr), user.id);
     if (info.changes === 0) {
       fail(res, 404, '记录不存在或不属于当前用户');
       return;
@@ -368,7 +318,7 @@ async function handleApi(req, res, url, pathname) {
 
   // ---- DELETE /api/codes ----
   if (method === 'DELETE' && pathname === '/api/codes') {
-    qClearCodes.run(user.id);
+    db.clearCodes(user.id);
     sendJson(res, 200, { ok: true });
     return;
   }
@@ -479,8 +429,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`YZ-Code 服务端已启动: http://${HOST}:${PORT}`);
-  console.log(`数据库文件: ${path.join(DATA_DIR, 'app.db')}`);
+  console.log(`YZ-Code 服务端已启动: http://${HOST}:${PORT} (存储后端: ${db.backend})`);
 });
 
 function shutdown() {

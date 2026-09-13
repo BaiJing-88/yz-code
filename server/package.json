@@ -2,9 +2,9 @@
   "name": "yz-code-server",
   "version": "1.0.0",
   "private": true,
-  "description": "YZ-Code 验证码查看器 · 服务端 + Web 前端（零依赖，Node 内置模块）",
+  "description": "YZ-Code 验证码查看器 · 服务端 + Web 前端（零依赖）",
   "main": "index.js",
   "scripts": {
-    "start": "node --disable-warning=ExperimentalWarning index.js"
+    "start": "node index.js"
   }
 }
